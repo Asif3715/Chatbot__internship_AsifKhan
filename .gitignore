@@ -1,0 +1,4 @@
+venv/
+day1/venv/
+.env
+day1/.env

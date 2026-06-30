@@ -1,0 +1,4 @@
+Installation requires Python 3.10 or higher.
+Run the installer script to set up the environment.
+Contact support at help@nexuschat.example for issues.
+The system stores documents in a vector store for retrieval.

@@ -1,0 +1,3 @@
+NexusChat is a simple chatbot for company Q&A.
+It can answer questions about product features and pricing.
+The chatbot uses retrieval to ground answers in docs.

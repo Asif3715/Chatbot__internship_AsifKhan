@@ -1,0 +1,2 @@
+Pricing: Basic plan is $10/month.
+Premium plan includes analytics and costs $30/month.
