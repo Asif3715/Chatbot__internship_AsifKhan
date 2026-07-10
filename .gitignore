@@ -21,5 +21,9 @@ dist/
 .env
 venv/
 day1/venv/
-.env
 day1/.env
+
+# Runtime generated files
+chat_history.db
+chroma_store/
+doc_hashes.json
