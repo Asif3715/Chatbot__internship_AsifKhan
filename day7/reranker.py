@@ -1,13 +1,20 @@
-from sentence_transformers import CrossEncoder
-
-CROSS_ENCODER_MODEL = 'cross-encoder/ms-marco-MiniLM-L-6-v2'
-cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
-print(f'Cross-encoder loaded: {CROSS_ENCODER_MODEL}')
+try:
+    from sentence_transformers import CrossEncoder
+    CROSS_ENCODER_MODEL = 'cross-encoder/ms-marco-MiniLM-L-6-v2'
+    cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+    print(f'Cross-encoder loaded: {CROSS_ENCODER_MODEL}')
+except ImportError:
+    cross_encoder = None
+    CROSS_ENCODER_MODEL = None
+    print('Cross-encoder not available (sentence-transformers not installed)')
 
 
 def rerank(question, chunks, top_k=3):
     if not chunks:
         return []
+
+    if cross_encoder is None:
+        return chunks[:top_k]
 
     pairs = [[question, chunk['text']] for chunk in chunks]
     scores = cross_encoder.predict(pairs)
