@@ -1,29 +1,22 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# Virtual environments
+.pytest_cache/
+*.egg-info/
 venv/
-env/
 .venv/
-
-# Distribution / packaging
+env/
 build/
 dist/
-*.egg-info/
-
-# IDEs and editors
 .vscode/
 .idea/
-
-# Python env files
+*.DS_Store
 .env
-venv/
-day1/venv/
-day1/.env
-
-# Runtime generated files
 chat_history.db
 chroma_store/
 doc_hashes.json
+day10/chroma_store/
+day10/chat_history.db
+day10/doc_hashes.json
+day1/venv/
+day1/.env

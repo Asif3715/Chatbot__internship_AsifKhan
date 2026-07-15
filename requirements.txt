@@ -1,3 +1,6 @@
+fastapi
+uvicorn[standard]
+httpx
 google-generativeai
 langchain
 langchain-text-splitters
@@ -5,3 +8,7 @@ chromadb
 python-dotenv
 pymupdf
 python-docx
+rank-bm25
+sentence-transformers
+numpy
+pydantic
