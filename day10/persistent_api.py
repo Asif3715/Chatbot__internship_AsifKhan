@@ -1,8 +1,10 @@
 import os
 import sys
 import uuid
+import json
 from typing import Optional, List
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
@@ -20,10 +22,17 @@ from day6.hybrid_retriever import reciprocal_rank_fusion
 from day7.reranker import rerank
 from day10.chat_store import initialise_db, save_turn, get_session_history, list_all_sessions, delete_session
 from day10.persistent_index import smart_startup
+from day13.streaming import stream_answer
 
 load_dotenv()
 
 app = FastAPI(title='NexusChat Persistent API', version='2.0.0')
+
+CHAT_HTML = os.path.join(ROOT, 'day11', 'chat.html')
+
+@app.get('/')
+def serve_chat_ui():
+    return FileResponse(CHAT_HTML)
 
 DAY2_DIR = os.path.join(ROOT, 'day2')
 STARTUP_DOCUMENTS = [os.path.join(DAY2_DIR, 'sample.txt'), os.path.join(DAY2_DIR, 'sample.pdf'), os.path.join(DAY2_DIR, 'sample.docx'), os.path.join(DAY2_DIR, 'sample2.txt')]
@@ -95,6 +104,47 @@ def chat(request: ChatRequest):
         return ChatResponse(answer=answer, sources=sources, session_id=session_id, turn_number=len(history) + 1)
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post('/chat/stream')
+def chat_stream(request: ChatRequest):
+    session_id = request.session_id or str(uuid.uuid4())
+    history = get_session_history(session_id)
+    try:
+        standalone = rewrite_query(request.question, history)
+        query_vec = embed_query(standalone)
+        raw = dense_collection.query(query_embeddings=[query_vec], n_results=10, include=['documents', 'metadatas', 'distances'])
+        dense_results = [{'text': d, 'source': m['source'], 'distance': dist} for d, m, dist in zip(raw['documents'][0], raw['metadatas'][0], raw['distances'][0])]
+        bm25_results = bm25_retriever.search(standalone, top_k=10)
+        merged = reciprocal_rank_fusion([bm25_results, dense_results])
+        chunks = rerank(standalone, merged[:10], top_k=3)
+
+        if not chunks:
+            def error_stream():
+                yield f'data: {json.dumps({"error": "No relevant documents found."})}\n\n'
+                yield f'data: {json.dumps({"done": True})}\n\n'
+            return StreamingResponse(error_stream(), media_type='text/event-stream')
+
+        question_captured = request.question
+        session_captured = session_id
+        full_answer = []
+
+        def generate_and_save():
+            for event in stream_answer(question_captured, chunks):
+                try:
+                    data = json.loads(event.replace('data: ', '').strip())
+                    if 'token' in data:
+                        full_answer.append(data['token'])
+                    if data.get('done'):
+                        save_turn(session_captured, question_captured, ''.join(full_answer))
+                        yield f'data: {json.dumps({"done": True, "session_id": session_captured})}\n\n'
+                        return
+                except Exception:
+                    pass
+                yield event
+
+        return StreamingResponse(generate_and_save(), media_type='text/event-stream', headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

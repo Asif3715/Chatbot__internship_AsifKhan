@@ -51,6 +51,7 @@ header h1{font-size:1.3rem;font-weight:700;letter-spacing:0.5px}
 #send-btn{background:#1565C0;color:white;border:none;border-radius:12px;padding:10px 20px;font-size:0.95rem;font-weight:600;cursor:pointer;transition:background 0.2s;white-space:nowrap}
 #send-btn:hover:not(:disabled){background:#1976D2}
 #send-btn:disabled{background:#90a4ae;cursor:not-allowed}
+@keyframes blink{50%{opacity:0}}
 </style>
 </head>
 <body>
@@ -197,33 +198,118 @@ charCount.textContent = '0 characters';
 inputEl.style.height = 'auto';
 sendBtn.disabled = true;
 
-appendMessage('user', question);
-showTyping();
+appendMessage('user', question, null);
+
+const botWrapper = document.createElement('div');
+botWrapper.className = 'message bot';
+const botBubble = document.createElement('div');
+botBubble.className = 'bubble';
+botBubble.textContent = '';
+botWrapper.appendChild(botBubble);
+
+const cursor = document.createElement('span');
+cursor.textContent = '\u258B';
+cursor.style.animation = 'blink 1s step-end infinite';
+botBubble.appendChild(cursor);
+
+messagesEl.appendChild(botWrapper);
+messagesEl.scrollTop = messagesEl.scrollHeight;
 
 try {
 const body = { question: question };
 if (sessionId) body.session_id = sessionId;
 
-const r = await fetch(API_BASE + '/chat', {
+const response = await fetch(API_BASE + '/chat/stream', {
 method: 'POST',
 headers: { 'Content-Type': 'application/json' },
 body: JSON.stringify(body)
 });
-const data = await r.json();
-hideTyping();
 
-if (!r.ok) {
-appendMessage('bot', 'Error: ' + (data.detail || 'Unknown error'), null);
-} else {
-appendMessage('bot', data.answer, data.sources, data.turn_number);
-if (!sessionId) {
-sessionId = data.session_id;
+if (!response.ok) {
+const err = await response.json();
+botBubble.textContent = 'Error: ' + (err.detail || 'Unknown error');
+cursor.remove();
+sendBtn.disabled = false;
+inputEl.focus();
+return;
+}
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+let buffer = '';
+
+while (true) {
+const { value, done } = await reader.read();
+if (done) break;
+
+buffer += decoder.decode(value, { stream: true });
+const parts = buffer.split('\n\n');
+buffer = parts.pop();
+
+for (const part of parts) {
+const line = part.trim();
+if (!line.startsWith('data: ')) continue;
+let event;
+try {
+event = JSON.parse(line.slice(6));
+} catch (e) { continue; }
+
+if (event.token) {
+botBubble.insertBefore(document.createTextNode(event.token), cursor);
+messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+if (event.sources) {
+const sourcesEl = document.createElement('div');
+sourcesEl.className = 'sources';
+const unique = [...new Set(event.sources.map(function(s) { return s.source; }))];
+unique.forEach(function(src) {
+const srcData = event.sources.find(function(s) { return s.source === src; });
+const tag = document.createElement('span');
+tag.className = 'source-tag';
+tag.textContent = src;
+tag.style.cursor = 'pointer';
+const preview = document.createElement('div');
+preview.className = 'source-preview';
+preview.textContent = srcData ? srcData.preview || '' : '';
+tag.addEventListener('click', function() {
+preview.style.display = preview.style.display === 'none' ? 'block' : 'none';
+});
+sourcesEl.appendChild(tag);
+sourcesEl.appendChild(preview);
+});
+botWrapper.appendChild(sourcesEl);
+}
+
+if (event.done) {
+cursor.remove();
+if (!sessionId && event.session_id) {
+sessionId = event.session_id;
 sessionInfo.textContent = sessionId;
 }
+const copyBtn = document.createElement('button');
+copyBtn.className = 'copy-btn';
+copyBtn.textContent = 'Copy';
+copyBtn.addEventListener('click', function() {
+navigator.clipboard.writeText(botBubble.textContent).then(function() {
+copyBtn.textContent = 'Copied!';
+setTimeout(function() { copyBtn.textContent = 'Copy'; }, 2000);
+});
+});
+botWrapper.appendChild(copyBtn);
 }
+
+if (event.error) {
+botBubble.textContent = 'Error: ' + event.error;
+cursor.remove();
+}
+}
+}
+
+cursor.remove();
 } catch (e) {
-hideTyping();
-appendMessage('bot', 'Could not reach the API. Is the server running?', null);
+botBubble.textContent = 'Stream failed — is the server running?';
+cursor.remove();
 } finally {
 sendBtn.disabled = false;
 inputEl.focus();
