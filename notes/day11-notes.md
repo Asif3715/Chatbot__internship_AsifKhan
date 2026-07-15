@@ -59,4 +59,4 @@ The **reranker** (Day 7) has the most impact on answer quality. Retrieval (dense
 
 ## Screenshot
 
-![NexusChat UI Working](Screenshot from 2026-07-15 07-59-26.png)
+![NexusChat UI Working](Screenshot%20from%202026-07-15%2007-59-26.png)
