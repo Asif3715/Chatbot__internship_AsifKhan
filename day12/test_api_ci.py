@@ -1,6 +1,7 @@
 import sys
 import os
 import types
+import json
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 
@@ -57,7 +58,14 @@ with patch('day10.persistent_index.smart_startup', return_value={
     persistent_api.bm25_retriever = mock_bm25
     persistent_api.total_chunks = 42
 
+from day14.auth import generate_api_key, KEYS_FILE
+
+if KEYS_FILE.exists():
+    KEYS_FILE.unlink()
+TEST_API_KEY = generate_api_key('ci-test')
+
 client = TestClient(app)
+AUTH_HEADERS = {'X-API-Key': TEST_API_KEY}
 
 
 class TestHealthEndpoint:
@@ -73,11 +81,11 @@ class TestHealthEndpoint:
 
 class TestChatEndpoint:
     def test_chat_requires_question(self):
-        r = client.post('/chat', json={})
+        r = client.post('/chat', json={}, headers=AUTH_HEADERS)
         assert r.status_code == 422
 
     def test_chat_returns_answer_and_session(self):
-        r = client.post('/chat', json={'question': 'What is NexusChat?'})
+        r = client.post('/chat', json={'question': 'What is NexusChat?'}, headers=AUTH_HEADERS)
         assert r.status_code == 200
         data = r.json()
         assert 'answer' in data
@@ -86,27 +94,27 @@ class TestChatEndpoint:
         assert len(data['answer']) > 0
 
     def test_chat_session_id_persists(self):
-        r1 = client.post('/chat', json={'question': 'Hello'})
+        r1 = client.post('/chat', json={'question': 'Hello'}, headers=AUTH_HEADERS)
         sid = r1.json()['session_id']
-        r2 = client.post('/chat', json={'question': 'Follow up', 'session_id': sid})
+        r2 = client.post('/chat', json={'question': 'Follow up', 'session_id': sid}, headers=AUTH_HEADERS)
         assert r2.status_code == 200
         assert r2.json()['session_id'] == sid
 
     def test_chat_empty_question_rejected(self):
-        r = client.post('/chat', json={'question': ''})
+        r = client.post('/chat', json={'question': ''}, headers=AUTH_HEADERS)
         assert r.status_code in (200, 400, 422)
 
 
 class TestIngestEndpoint:
     def test_ingest_requires_fields(self):
-        r = client.post('/ingest', json={'filename': 'test.txt'})
+        r = client.post('/ingest', json={'filename': 'test.txt'}, headers=AUTH_HEADERS)
         assert r.status_code == 422
 
     def test_ingest_returns_chunk_count(self):
         r = client.post('/ingest', json={
             'filename': 'test.txt',
             'content': 'This is test content for the CI pipeline. ' * 20,
-        })
+        }, headers=AUTH_HEADERS)
         assert r.status_code == 200
         data = r.json()
         assert 'chunks_added' in data
@@ -115,12 +123,12 @@ class TestIngestEndpoint:
 
 class TestSessionEndpoint:
     def test_missing_session_returns_404(self):
-        r = client.get('/session/nonexistent-session-id')
+        r = client.get('/session/nonexistent-session-id', headers=AUTH_HEADERS)
         assert r.status_code == 404
 
     def test_existing_session_returns_history(self):
-        r1 = client.post('/chat', json={'question': 'CI test question'})
+        r1 = client.post('/chat', json={'question': 'CI test question'}, headers=AUTH_HEADERS)
         sid = r1.json()['session_id']
-        r2 = client.get(f'/session/{sid}')
+        r2 = client.get(f'/session/{sid}', headers=AUTH_HEADERS)
         assert r2.status_code == 200
         assert r2.json()['turn_count'] >= 1
