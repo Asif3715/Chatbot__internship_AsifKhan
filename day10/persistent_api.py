@@ -3,8 +3,10 @@ import sys
 import uuid
 import json
 from typing import Optional, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse, FileResponse
+from day14.auth import APIKeyMiddleware, generate_api_key, load_keys
+from day14.rate_limiter import RateLimitMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import uvicorn
@@ -27,6 +29,8 @@ from day13.streaming import stream_answer
 load_dotenv()
 
 app = FastAPI(title='NexusChat Persistent API', version='2.0.0')
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(APIKeyMiddleware)
 
 CHAT_HTML = os.path.join(ROOT, 'day11', 'chat.html')
 
@@ -186,6 +190,27 @@ def ingest(request: IngestRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post('/admin/keys')
+def create_api_key(label: str = Query(...), admin_secret: str = Query(...)):
+    expected = os.getenv('ADMIN_SECRET', 'change-me-in-production')
+    if admin_secret != expected:
+        raise HTTPException(status_code=403, detail='Invalid admin secret.')
+    new_key = generate_api_key(label)
+    return {
+        'key': new_key,
+        'label': label,
+        'warning': 'Save this key now — it will not be shown again.',
+    }
+
+
+@app.get('/admin/keys')
+def list_api_keys(admin_secret: str = Query(...)):
+    expected = os.getenv('ADMIN_SECRET', 'change-me-in-production')
+    if admin_secret != expected:
+        raise HTTPException(status_code=403, detail='Invalid admin secret.')
+    return load_keys()
 
 if __name__ == '__main__':
     uvicorn.run('persistent_api:app', host='0.0.0.0', port=8000, reload=False)

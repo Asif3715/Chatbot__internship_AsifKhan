@@ -90,6 +90,16 @@ header h1{font-size:1.3rem;font-weight:700;letter-spacing:0.5px}
 const API_BASE = '';
 let sessionId = null;
 
+let API_KEY = localStorage.getItem('nexuschat_api_key') || '';
+if (!API_KEY) {
+  API_KEY = prompt('Enter your NexusChat API key:') || '';
+  if (API_KEY) localStorage.setItem('nexuschat_api_key', API_KEY);
+}
+
+function authHeaders() {
+  return { 'Content-Type': 'application/json', 'X-API-Key': API_KEY };
+}
+
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('question-input');
 const sendBtn = document.getElementById('send-btn');
@@ -176,9 +186,9 @@ if (el) el.remove();
 }
 
 async function checkHealth() {
-try {
-const r = await fetch(API_BASE + '/health');
-const data = await r.json();
+  try {
+    const r = await fetch(API_BASE + '/health', { headers: authHeaders() });
+    const data = await r.json();
 statusDot.style.background = '#4caf50';
 statusText.textContent = 'Connected';
 chunksBadge.textContent = data.chunks_indexed + ' chunks indexed';
@@ -219,11 +229,11 @@ try {
 const body = { question: question };
 if (sessionId) body.session_id = sessionId;
 
-const response = await fetch(API_BASE + '/chat/stream', {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify(body)
-});
+    const response = await fetch(API_BASE + '/chat/stream', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(body)
+    });
 
 if (!response.ok) {
 const err = await response.json();
@@ -339,11 +349,11 @@ statusEl.textContent = 'Uploading...';
 statusEl.style.color = '#90caf9';
 
 try {
-const r = await fetch(API_BASE + '/ingest', {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ filename: filename, content: content })
-});
+    const r = await fetch(API_BASE + '/ingest', {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ filename: filename, content: content })
+    });
 const data = await r.json();
 
 if (r.ok) {
