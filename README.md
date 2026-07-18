@@ -1,6 +1,6 @@
 # NexusChat
 
-A production-grade Retrieval-Augmented Generation (RAG) chatbot that answers questions from user-provided documents. Built from scratch using Google Gemini, ChromaDB, hybrid search, cross-encoder re-ranking, and streaming Server-Sent Events — containerised with Docker and tested with GitHub Actions CI.
+A production-grade Retrieval-Augmented Generation (RAG) chatbot that answers questions from user-provided documents. Built from scratch using Google Gemini, ChromaDB, hybrid search, cross-encoder re-ranking, streaming Server-Sent Events, API key authentication, and sliding window rate limiting — containerised with Docker and tested with GitHub Actions CI.
 
 ## Overview
 
@@ -23,6 +23,8 @@ NexusChat ingests PDF, DOCX, and TXT documents, chunks them into searchable segm
 | Chat Persistence | SQLite |
 | Backend API | FastAPI + Uvicorn |
 | Chat UI | Single-file HTML/CSS/JS with streaming fetch |
+| Authentication | API key middleware (SHA-256 hashed storage) |
+| Rate Limiting | Sliding window (20 req/min per client) |
 | Containerisation | Docker + Docker Compose |
 | CI/CD | GitHub Actions |
 
@@ -35,6 +37,8 @@ NexusChat ingests PDF, DOCX, and TXT documents, chunks them into searchable segm
 - **Source Citations** — every answer includes clickable source tags with expandable chunk previews
 - **Document Upload** — ingest new text documents directly from the browser sidebar
 - **Persistent Storage** — chat history in SQLite, vector index in ChromaDB PersistentClient
+- **API Key Authentication** — header-based auth middleware, keys stored as SHA-256 hashes, public paths exempt
+- **Rate Limiting** — sliding window algorithm caps each client at 20 requests per minute with Retry-After headers
 - **Docker Deployment** — single `docker compose up` starts the full application
 - **CI Pipeline** — GitHub Actions runs 10 mocked API tests on every push
 
@@ -55,6 +59,7 @@ Chatbot__internship_AsifKhan/
 ├── day11/                   # Browser chat UI (HTML/CSS/JS)
 ├── day12/                   # Dockerfile, CI pipeline, final technical summary
 ├── day13/                   # SSE streaming endpoint and streaming UI
+├── day14/                   # API key auth middleware + sliding window rate limiter
 ├── notes/                   # Daily learning notes and reflections
 ├── Dockerfile               # Container image definition
 ├── docker-compose.yml       # Container orchestration
@@ -92,7 +97,15 @@ Start the API server:
 python day10/persistent_api.py
 ```
 
-Open `http://localhost:8000` in your browser.
+Open `http://localhost:8000` in your browser. On first load, you will be prompted for an API key.
+
+### Generating an API Key
+
+```bash
+curl -X POST 'http://localhost:8000/admin/keys?label=dev&admin_secret=change-me-in-production'
+```
+
+Save the returned key — it will not be shown again. All `/chat` and `/ingest` requests require this key in the `X-API-Key` header.
 
 ### Docker Setup
 
@@ -106,32 +119,43 @@ Open `http://localhost:8000`. Data persists across container restarts via mounte
 
 ## API Endpoints
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/` | Serves the chat UI |
-| GET | `/health` | Returns status, chunk count, session count |
-| POST | `/chat` | Non-streaming chat (full response) |
-| POST | `/chat/stream` | Streaming chat (SSE, token-by-token) |
-| POST | `/ingest` | Ingest a new text document |
-| GET | `/sessions` | List all chat sessions |
-| GET | `/session/{id}` | Get session history |
-| DELETE | `/session/{id}` | Delete a session |
+| Method | Endpoint | Auth | Description |
+|---|---|---|---|
+| GET | `/` | No | Serves the chat UI |
+| GET | `/health` | No | Returns status, chunk count, session count |
+| POST | `/chat` | Yes | Non-streaming chat (full response) |
+| POST | `/chat/stream` | Yes | Streaming chat (SSE, token-by-token) |
+| POST | `/ingest` | Yes | Ingest a new text document |
+| GET | `/sessions` | Yes | List all chat sessions |
+| GET | `/session/{id}` | Yes | Get session history |
+| DELETE | `/session/{id}` | Yes | Delete a session |
+| POST | `/admin/keys` | Admin secret | Generate a new API key |
+| GET | `/admin/keys` | Admin secret | List all key metadata |
 
 ### Example: Streaming Chat
 
 ```bash
 curl --no-buffer -X POST http://localhost:8000/chat/stream \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your-api-key-here' \
   -d '{"question": "What is NexusChat?"}'
 ```
 
 ## Running Tests
 
+### Unit Tests (mocked, no API key needed)
+
 ```bash
 python -m pytest day12/test_api_ci.py -v
 ```
 
-All 10 tests run without a Gemini API key (mocked dependencies).
+### Security Tests (requires running server + API key)
+
+```bash
+python day14/test_security.py
+```
+
+Verifies: auth rejects missing/wrong keys with 401, valid key returns 200, `/health` is public, rate limiter blocks after 20 requests with 429 + Retry-After header.
 
 ## CI/CD
 
